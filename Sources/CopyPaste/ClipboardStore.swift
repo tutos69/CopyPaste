@@ -11,6 +11,8 @@ struct ClipItem: Codable, Identifiable, Equatable {
     var hash: String
     var date: Date
     var pinned = false
+    /// Text found inside an image: nil = not scanned yet, "" = no text.
+    var ocrText: String?
 }
 
 /// Watches the general pasteboard and keeps a persistent history (like Windows + V).
@@ -105,6 +107,15 @@ final class ClipboardStore: ObservableObject {
         items.insert(item, at: 0)
         trim()
         save()
+
+        if let imageData {
+            let id = item.id
+            OCR.recognizeText(in: imageData) { [weak self] text in
+                guard let self, let index = self.items.firstIndex(where: { $0.id == id }) else { return }
+                self.items[index].ocrText = text
+                self.save()
+            }
+        }
     }
 
     private func trim() {
@@ -136,6 +147,26 @@ final class ClipboardStore: ObservableObject {
             moved.date = Date()
             items.insert(moved, at: 0)
             save()
+        }
+    }
+
+    /// Text inside an image item, using the cached scan when available.
+    func recognizedText(of item: ClipItem, completion: @escaping (String) -> Void) {
+        if let cached = items.first(where: { $0.id == item.id })?.ocrText {
+            completion(cached)
+            return
+        }
+        guard let file = item.imageFile,
+              let data = try? Data(contentsOf: imagesDir.appendingPathComponent(file)) else {
+            completion("")
+            return
+        }
+        OCR.recognizeText(in: data) { [weak self] text in
+            if let self, let index = self.items.firstIndex(where: { $0.id == item.id }) {
+                self.items[index].ocrText = text
+                self.save()
+            }
+            completion(text)
         }
     }
 

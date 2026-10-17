@@ -4,6 +4,7 @@
 
 - **Capturas directo al portapapeles**: ⌘⇧4 (recorte) y ⌘⇧3 (pantalla completa) copian la imagen, igual que `Win + Shift + S`. Solo pegas con ⌘V.
 - **Historial del portapapeles con ⌘⇧V**, igual que `Win + V`: textos e imágenes que copiaste, listos para volver a pegar.
+- **Copia el texto de la pantalla con ⌘⇧2**: recorta cualquier zona (una imagen, un video, un PDF escaneado) y obtienes el texto para pegarlo. Lee español e inglés, sin internet.
 
 Es una app pequeña de la barra de menú: sin cuentas, sin internet, sin anuncios. El historial se guarda solo en tu Mac.
 
@@ -29,7 +30,8 @@ curl -fsSL https://raw.githubusercontent.com/tutos69/CopyPaste/main/install.sh |
 
 1. Aparece un ícono 📋 en la barra de menú, arriba a la derecha.
 2. macOS te pedirá el permiso de **Accesibilidad** (Ajustes del Sistema → Privacidad y seguridad → Accesibilidad → CopyPaste). Sirve para que, al elegir algo del historial, se **pegue solo**. Sin el permiso, igual se copia y lo pegas tú con ⌘V.
-3. En el menú del ícono, activa **"Abrir al iniciar sesión"** para que arranque sola cada vez que enciendas la Mac.
+3. La primera vez que uses ⌘⇧2, macOS pedirá el permiso de **Grabación de pantalla** (Ajustes del Sistema → Privacidad y seguridad → Grabación de pantalla → CopyPaste). Sin él, la captura no ve el contenido de las ventanas. Después de darlo, cierra y vuelve a abrir CopyPaste.
+4. En el menú del ícono, activa **"Abrir al iniciar sesión"** para que arranque sola cada vez que enciendas la Mac.
 
 Requisitos: macOS 14 (Sonoma) o posterior. Funciona en Mac con Apple Silicon y con Intel.
 
@@ -41,9 +43,11 @@ Requisitos: macOS 14 (Sonoma) o posterior. Funciona en Mac con Apple Silicon y c
 |---|---|
 | Captura de un recorte al portapapeles | ⌘⇧4 |
 | Captura de pantalla completa al portapapeles | ⌘⇧3 |
+| Copiar el texto de una zona de la pantalla | ⌘⇧2 |
 | Abrir/cerrar el historial | ⌘⇧V |
 | Moverse por el historial | ↑ ↓ |
 | Pegar el elemento seleccionado | ↩ o clic |
+| Pegar el texto que hay dentro de una imagen | ⌥↩ o botón 🔍 |
 | Pegar uno de los 9 primeros | 1 – 9 |
 | Borrar el elemento seleccionado | ⌫ |
 | Cerrar | esc |
@@ -81,7 +85,9 @@ Estructura:
 - `Sources/CopyPaste/ClipboardStore.swift`: vigila el portapapeles y guarda el historial.
 - `Sources/CopyPaste/HistoryPanel.swift`: el panel del historial (⌘⇧V).
 - `Sources/CopyPaste/AppDelegate.swift`: menú de la barra, atajo global y ajuste de capturas.
-- `Sources/CopyPaste/HotKey.swift`: registro del atajo global.
+- `Sources/CopyPaste/HotKey.swift`: registro de los atajos globales.
+- `Sources/CopyPaste/OCR.swift`: reconocimiento de texto con Vision de Apple, en la propia Mac.
+- `Sources/CopyPaste/Toast.swift`: el aviso corto que aparece en pantalla.
 
 ## Contribuir
 

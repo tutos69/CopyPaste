@@ -50,6 +50,7 @@ final class HistoryPanelController: NSObject, NSWindowDelegate {
 
         let root = HistoryView(store: store, state: state,
                                onSelect: { [weak self] item in self?.select(item) },
+                               onPasteText: { [weak self] item in self?.pasteText(of: item) },
                                onClose: { [weak self] in self?.close() })
         let hosting = NSHostingView(rootView: root)
         hosting.frame = background.bounds
@@ -96,7 +97,26 @@ final class HistoryPanelController: NSObject, NSWindowDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { Self.simulatePaste() }
     }
 
-    private static func simulatePaste() {
+    /// Pastes the text found inside an image item instead of the image.
+    private func pasteText(of item: ClipItem) {
+        close()
+        store.recognizedText(of: item) { text in
+            guard !text.isEmpty else {
+                Toast.show("No se encontró texto en la imagen", symbol: "text.magnifyingglass")
+                return
+            }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+            if Accessibility.trusted {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { Self.simulatePaste() }
+            } else {
+                Toast.show("Texto copiado")
+            }
+        }
+    }
+
+    static func simulatePaste() {
         let source = CGEventSource(stateID: .combinedSessionState)
         let vKey: CGKeyCode = 9
         let down = CGEvent(keyboardEventSource: source, virtualKey: vKey, keyDown: true)
@@ -116,8 +136,15 @@ final class HistoryPanelController: NSObject, NSWindowDelegate {
             if !items.isEmpty { state.selected = min(state.selected + 1, items.count - 1) }
         case 126: // up
             state.selected = max(state.selected - 1, 0)
-        case 36, 76: // return, enter
-            if items.indices.contains(state.selected) { select(items[state.selected]) }
+        case 36, 76: // return, enter (⌥ = paste the text found in an image)
+            if items.indices.contains(state.selected) {
+                let item = items[state.selected]
+                if event.modifierFlags.contains(.option), item.kind == .image {
+                    pasteText(of: item)
+                } else {
+                    select(item)
+                }
+            }
         case 51, 117: // delete, forward delete
             if items.indices.contains(state.selected) {
                 store.remove(items[state.selected])
@@ -141,6 +168,7 @@ struct HistoryView: View {
     @ObservedObject var store: ClipboardStore
     @ObservedObject var state: PanelState
     var onSelect: (ClipItem) -> Void
+    var onPasteText: (ClipItem) -> Void
     var onClose: () -> Void
 
     var body: some View {
@@ -178,7 +206,8 @@ struct HistoryView: View {
                             ForEach(Array(store.items.enumerated()), id: \.element.id) { index, item in
                                 ClipRow(item: item, index: index, store: store,
                                         selected: index == state.selected,
-                                        onHover: { state.selected = index })
+                                        onHover: { state.selected = index },
+                                        onPasteText: { onPasteText(item) })
                                     .id(item.id)
                                     .onTapGesture { onSelect(item) }
                             }
@@ -193,7 +222,7 @@ struct HistoryView: View {
             }
 
             Divider()
-            Text("↑↓ navegar · ↩ pegar · 1–9 rápido · ⌫ borrar · esc cerrar")
+            Text("↑↓ navegar · ↩ pegar · ⌥↩ pegar texto de imagen · ⌫ borrar · esc")
                 .font(.caption2)
                 .foregroundStyle(.secondary)
                 .padding(6)
@@ -208,6 +237,7 @@ struct ClipRow: View {
     let store: ClipboardStore
     let selected: Bool
     var onHover: () -> Void
+    var onPasteText: () -> Void
 
     @State private var hovering = false
 
@@ -225,6 +255,11 @@ struct ClipRow: View {
                     }
                     .buttonStyle(.plain)
                     .help(item.pinned ? "Desanclar" : "Anclar (no se borra con «Borrar todo»)")
+                }
+                if hovering, item.kind == .image, item.ocrText != "" {
+                    Button(action: onPasteText) { Image(systemName: "text.viewfinder") }
+                        .buttonStyle(.plain)
+                        .help("Pegar el texto de la imagen")
                 }
                 if hovering {
                     Button { store.remove(item) } label: { Image(systemName: "trash") }

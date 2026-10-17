@@ -31,6 +31,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private lazy var panel = HistoryPanelController(store: store)
     private var statusItem: NSStatusItem!
     private var hotKey: HotKey?
+    private var textHotKey: HotKey?
+    private var isCapturingText = false
     private let menu = NSMenu()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -47,6 +49,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if hotKey?.registered != true {
             NSLog("CopyPaste: could not register ⌘⇧V (another app may be using it)")
         }
+        textHotKey = HotKey(keyCode: UInt32(kVK_ANSI_2), modifiers: UInt32(cmdKey | shiftKey)) { [weak self] in
+            self?.captureText()
+        }
+        if textHotKey?.registered != true {
+            NSLog("CopyPaste: could not register ⌘⇧2 (another app may be using it)")
+        }
 
         let defaults = UserDefaults.standard
         if !defaults.bool(forKey: "didInitialSetup") {
@@ -62,6 +70,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.removeAllItems()
 
         menu.addItem(item("Mostrar historial  ⌘⇧V", #selector(showHistory)))
+        menu.addItem(item("Copiar texto de la pantalla  ⌘⇧2", #selector(captureText)))
         menu.addItem(.separator())
 
         let screenshots = item("Capturas (⌘⇧3 / ⌘⇧4) al portapapeles", #selector(toggleScreenshots))
@@ -90,6 +99,51 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showHistory() { panel.show() }
+
+    /// ⌘⇧2: select an area of the screen and copy the text inside it.
+    @objc private func captureText() {
+        guard !isCapturingText else { return }
+
+        // Without Screen Recording permission the capture only shows the wallpaper.
+        if !CGPreflightScreenCaptureAccess() {
+            CGRequestScreenCaptureAccess()
+            Toast.show("Da permiso de Grabación de pantalla a CopyPaste y vuelve a intentarlo",
+                       symbol: "exclamationmark.triangle.fill")
+            return
+        }
+
+        isCapturingText = true
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("copypaste-text-\(UUID().uuidString).png")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
+        process.arguments = ["-i", "-x", file.path] // interactive selection, no sound, to a file
+        process.terminationHandler = { [weak self] _ in
+            DispatchQueue.main.async { self?.finishTextCapture(file) }
+        }
+        do {
+            try process.run()
+        } catch {
+            isCapturingText = false
+        }
+    }
+
+    private func finishTextCapture(_ file: URL) {
+        isCapturingText = false
+        guard let data = try? Data(contentsOf: file) else { return } // cancelled with esc
+        try? FileManager.default.removeItem(at: file)
+
+        OCR.recognizeText(in: data) { text in
+            guard !text.isEmpty else {
+                Toast.show("No se encontró texto", symbol: "text.magnifyingglass")
+                return
+            }
+            let pasteboard = NSPasteboard.general
+            pasteboard.clearContents()
+            pasteboard.setString(text, forType: .string)
+            Toast.show("Texto copiado")
+        }
+    }
 
     @objc private func toggleScreenshots() {
         ScreenshotSettings.setToClipboard(!ScreenshotSettings.toClipboard)
